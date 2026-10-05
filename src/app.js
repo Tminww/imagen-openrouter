@@ -101,106 +101,39 @@ const state = {
 };
 
 // ===== Model Configurations =====
-const MODEL_CONFIGS = {
-    'google/gemini-2.5-flash-image': {
-        name: 'Gemini 2.5 Flash Image',
-        supportsImageSize: true,
-        supportsAspectRatio: true,
-        supportsImageInput: true,
-        maxReferences: 3
-    },
-    'google/gemini-2.5-flash-image-preview': {
-        name: 'Gemini 2.5 Flash Image (Preview)',
-        supportsImageSize: true,
-        supportsAspectRatio: true,
-        supportsImageInput: true,
-        maxReferences: 3
-    },
-    'google/gemini-3.1-flash-image-preview': {
-        name: 'Gemini 3.1 Flash Image (Preview)',
-        supportsImageSize: true,
-        supportsAspectRatio: true,
-        supportsImageInput: true,
-        maxReferences: 3
-    },
-    'google/gemini-3-pro-image-preview': {
-        name: 'Gemini 3 Pro Image (Preview)',
-        supportsImageSize: true,
-        supportsAspectRatio: true,
-        supportsImageInput: true,
-        maxReferences: 14
-    },
-    'openai/gpt-5-image': {
-        name: 'GPT-5 Image',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: true,
-        maxReferences: 1
-    },
-    'openai/gpt-5-image-mini': {
-        name: 'GPT-5 Image Mini',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: true,
-        maxReferences: 1
-    },
-    'black-forest-labs/flux.2-pro': {
-        name: 'Flux 2 Pro',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
-    },
-    'black-forest-labs/flux.2-max': {
-        name: 'Flux 2 Max',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
-    },
-    'black-forest-labs/flux.2-flex': {
-        name: 'Flux 2 Flex',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
-    },
-    'black-forest-labs/flux.2-klein-4b': {
-        name: 'Flux 2 Klein 4B',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
-    },
-    'bytedance-seed/seedream-4.5': {
-        name: 'Seedream 4.5',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
-    },
-    'sourceful/riverflow-v2-fast-preview': {
-        name: 'Riverflow V2 Fast',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
-    },
-    'sourceful/riverflow-v2-standard-preview': {
-        name: 'Riverflow V2 Standard',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
-    },
-    'sourceful/riverflow-v2-max-preview': {
-        name: 'Riverflow V2 Max',
-        supportsImageSize: false,
-        supportsAspectRatio: true,
-        supportsImageInput: false,
-        maxReferences: 0
+// Filled from OpenRouter by loadModels()
+const MODEL_CONFIGS = {};
+
+async function loadModels() {
+    try {
+        const res = await fetch('https://openrouter.ai/api/v1/models?output_modalities=image');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { data } = await res.json();
+        elements.modelSelectOptions.innerHTML = '';
+        for (const m of data) {
+            if (m.id.startsWith('openrouter/')) continue; // auto routers
+            MODEL_CONFIGS[m.id] = {
+                name: m.name,
+                modalities: m.architecture.output_modalities,
+                supportsImageSize: m.id.includes('gemini'),
+                supportsAspectRatio: true,
+                supportsImageInput: m.architecture.input_modalities.includes('image')
+            };
+            const opt = document.createElement('div');
+            opt.className = 'custom-select-option';
+            opt.dataset.value = m.id;
+            opt.textContent = m.name;
+            elements.modelSelectOptions.appendChild(opt);
+        }
+    } catch (error) {
+        console.error('Failed to load models:', error);
+        showToast('Failed to load model list from OpenRouter', 'error');
     }
-};
+    // Saved model may have been removed from OpenRouter
+    if (!MODEL_CONFIGS[state.selectedModel]) {
+        state.selectedModel = Object.keys(MODEL_CONFIGS)[0] || '';
+    }
+}
 
 // ===== DOM Elements =====
 const elements = {
@@ -247,8 +180,11 @@ async function init() {
     // Render reference slots
     renderReferenceSlots();
 
+    await loadModels();
+
     // Restore saved model selection
     if (state.selectedModel) {
+        localStorage.setItem('imagen_model', state.selectedModel);
         const savedOption = document.querySelector(`.custom-select-option[data-value="${state.selectedModel}"]`);
         if (savedOption) {
             document.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
