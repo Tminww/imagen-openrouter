@@ -38,6 +38,12 @@
             <!-- Model Selection -->
             <div class="config-section">
                 <h3>Model</h3>
+                <select id="modelSort" class="model-sort" aria-label="Sort models">
+                    <option value="elo">Sort: Elo rating</option>
+                    <option value="date">Sort: Release date</option>
+                    <option value="price">Sort: Price (low first)</option>
+                    <option value="name">Sort: Name</option>
+                </select>
                 <div class="custom-select" id="modelSelectContainer">
                     <div class="custom-select-trigger" id="modelSelectTrigger">
                         <span id="modelSelectValue">Loading…</span>
@@ -62,12 +68,12 @@
             <div class="config-section">
                 <h3>Aspect Ratio</h3>
                 <div class="aspect-grid">
-                    <button class="btn-aspect active" data-ratio="1:1">1:1</button>
-                    <button class="btn-aspect" data-ratio="16:9">16:9</button>
-                    <button class="btn-aspect" data-ratio="9:16">9:16</button>
-                    <button class="btn-aspect" data-ratio="4:3">4:3</button>
-                    <button class="btn-aspect" data-ratio="3:4">3:4</button>
-                    <button class="btn-aspect" data-ratio="3:2">3:2</button>
+                    <button class="btn-aspect active" data-ratio="1:1"><span class="ratio-box" style="--w:1;--h:1"></span>1:1</button>
+                    <button class="btn-aspect" data-ratio="16:9"><span class="ratio-box" style="--w:16;--h:9"></span>16:9</button>
+                    <button class="btn-aspect" data-ratio="9:16"><span class="ratio-box" style="--w:9;--h:16"></span>9:16</button>
+                    <button class="btn-aspect" data-ratio="4:3"><span class="ratio-box" style="--w:4;--h:3"></span>4:3</button>
+                    <button class="btn-aspect" data-ratio="3:4"><span class="ratio-box" style="--w:3;--h:4"></span>3:4</button>
+                    <button class="btn-aspect" data-ratio="3:2"><span class="ratio-box" style="--w:3;--h:2"></span>3:2</button>
                 </div>
             </div>
 

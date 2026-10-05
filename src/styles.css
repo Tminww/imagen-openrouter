@@ -348,6 +348,10 @@ body {
 }
 
 .btn-aspect {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
     padding: 8px 12px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
@@ -357,6 +361,15 @@ body {
     font-weight: 500;
     cursor: pointer;
     transition: all var(--transition-fast);
+}
+
+.ratio-box {
+    /* fits the ratio into a 28x28 square, so shapes are comparable between buttons */
+    width: calc(28px * min(1, var(--w) / var(--h)));
+    height: calc(28px * min(1, var(--h) / var(--w)));
+    border: 2px solid currentColor;
+    border-radius: 2px;
+    box-sizing: border-box;
 }
 
 .btn-aspect:hover {
@@ -1071,4 +1084,38 @@ body {
     .gallery {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     }
+}
+.custom-select-option,
+#modelSelectValue {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.model-price {
+    opacity: 0.6;
+    font-size: 0.75rem;
+    line-height: 1.3;
+}
+
+.model-sort {
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+
+.custom-select-option.no-refs {
+    opacity: 0.55;
+}
+
+.btn-toggle:disabled,
+.btn-aspect:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
 }

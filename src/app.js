@@ -104,31 +104,136 @@ const state = {
 // Filled from OpenRouter by loadModels()
 const MODEL_CONFIGS = {};
 
+// Artificial Analysis text-to-image arena Elo (blind human votes), snapshot 2026-10-05
+// https://artificialanalysis.ai/text-to-image/arena/leaderboard-text — update manually, keyed by OpenRouter id
+const MODEL_ELO = {
+    'openai/gpt-image-2.5-sunburst': 1197,
+    'openai/gpt-image-2.5-flare': 1191,
+    'openai/gpt-image-2': 1172,
+    'x-ai/grok-imagine-image-2.0': 1155,
+    'microsoft/mai-image-2.6': 1151,
+    'google/gemini-3.1-flash-image': 1125,
+    'google/gemini-3.1-flash-image-preview': 1125,
+    'meta/muse-image': 1115,
+    'microsoft/mai-image-2.6-flash': 1106,
+    'microsoft/mai-image-2.5': 1104,
+    'google/gemini-3-pro-image': 1102,
+    'google/gemini-3-pro-image-preview': 1102,
+    'microsoft/mai-image-2.5-pro': 1100,
+    'google/gemini-3.1-flash-lite-image': 1096,
+    'qwen/qwen-image-3-pro': 1090,
+    'bytedance-seed/seedream-5-0-pro': 1081,
+    'qwen/qwen-image-3': 1076,
+    'x-ai/grok-imagine-image-quality': 1045,
+    'black-forest-labs/flux.2-flex': 1028,
+    'krea/krea-2-large': 1026,
+    'recraft/recraft-v4.1-utility': 1023,
+    'bytedance-seed/seedream-4.5': 1023,
+    'krea/krea-2-medium-turbo': 1022,
+    'black-forest-labs/flux.2-max': 1020,
+    'recraft/recraft-v4.1-utility-pro': 1018,
+    'krea/krea-2-medium': 1012,
+    'bytedance-seed/seedream-5-0-lite': 1012,
+    'openai/gpt-image-1': 1010,
+    'black-forest-labs/flux.2-pro': 1004,
+    'inclusionai/ming-image-0.1-design': 998,
+    'recraft/recraft-v4.1': 990,
+    'recraft/recraft-v4-pro': 987,
+    'recraft/recraft-v4.1-pro': 985,
+    'google/gemini-2.5-flash-image': 985,
+    'recraft/recraft-v4': 983,
+    'recraft/recraft-v4.1-flash': 957,
+    'openai/gpt-image-1-mini': 917,
+    'recraft/recraft-v3': 868,
+    'black-forest-labs/flux.2-klein-4b': 863
+};
+
+// OpenRouter prices are USD per token; image models bill output image tokens, so show $/1M
+function formatPrice(pricing) {
+    const perToken = parseFloat(pricing.image_output) || parseFloat(pricing.completion);
+    if (!perToken) return '';
+    const perM = perToken * 1e6;
+    return `$${perM >= 10 ? perM.toFixed(0) : perM.toFixed(2)}/1M`;
+}
+
+// Real per-image cost comes from usage.cost of the last generation (token counts per image aren't in the API)
+const costKey = (id) => `imagen_cost:${id}:${MODEL_CONFIGS[id].supportsImageSize ? state.imageQuality : ''}`;
+
+// Trigger mirrors the option: name on top, meta line (Elo, date, price, refs) below
+function setModelTrigger(opt) {
+    elements.modelSelectValue.replaceChildren(...[...opt.childNodes].map(n => n.cloneNode(true)));
+}
+
+function refreshPrices() {
+    document.querySelectorAll('.custom-select-option').forEach(opt => {
+        const id = opt.dataset.value;
+        const last = parseFloat(localStorage.getItem(costKey(id)));
+        const parts = [MODEL_ELO[id] && `Elo ${MODEL_ELO[id]}`, new Date(MODEL_CONFIGS[id].created * 1000).toISOString().slice(0, 10), MODEL_CONFIGS[id].perMillion, MODEL_CONFIGS[id].minReferences ? `📎 refs required (${MODEL_CONFIGS[id].minReferences}+)` : MODEL_CONFIGS[id].supportsImageInput ? '📎 refs' : '🚫 no refs', last ? `~$${last.toFixed(3)}/img` : ''].filter(Boolean);
+        opt.querySelector('.model-price').textContent = ` ${parts.join(' · ')}`;
+    });
+    const selected = document.querySelector('.custom-select-option.selected');
+    if (selected) setModelTrigger(selected);
+}
+
+// Unrated / unpriced models always go last
+const MODEL_SORTS = {
+    elo: (a, b) => (MODEL_ELO[b] || 0) - (MODEL_ELO[a] || 0),
+    date: (a, b) => MODEL_CONFIGS[b].created - MODEL_CONFIGS[a].created,
+    price: (a, b) => (MODEL_CONFIGS[a].perToken || Infinity) - (MODEL_CONFIGS[b].perToken || Infinity),
+    name: (a, b) => MODEL_CONFIGS[a].name.localeCompare(MODEL_CONFIGS[b].name)
+};
+
+function sortModels() {
+    const cmp = MODEL_SORTS[elements.modelSort.value];
+    [...elements.modelSelectOptions.children]
+        .sort((a, b) => cmp(a.dataset.value, b.dataset.value) || 0)
+        .forEach(opt => elements.modelSelectOptions.appendChild(opt));
+}
+
 async function loadModels() {
     try {
-        const res = await fetch('https://openrouter.ai/api/v1/models?output_modalities=image');
+        // Image API list has the real per-model capabilities; /models is only used for token pricing
+        const [res, pricingRes] = await Promise.all([
+            fetch('https://openrouter.ai/api/v1/images/models'),
+            fetch('https://openrouter.ai/api/v1/models?output_modalities=image').catch(() => null)
+        ]);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const { data } = await res.json();
+        const pricing = {};
+        for (const m of (await pricingRes?.json().catch(() => null))?.data || []) pricing[m.id] = m.pricing;
         elements.modelSelectOptions.innerHTML = '';
         for (const m of data) {
-            if (m.id.startsWith('openrouter/')) continue; // auto routers
+            const sp = m.supported_parameters;
+            const price = pricing[m.id] || {};
             MODEL_CONFIGS[m.id] = {
                 name: m.name,
-                modalities: m.architecture.output_modalities,
-                supportsImageSize: m.id.includes('gemini'),
-                supportsAspectRatio: true,
-                supportsImageInput: m.architecture.input_modalities.includes('image')
+                created: m.created, // unix seconds
+                perToken: parseFloat(price.image_output) || parseFloat(price.completion) || 0,
+                resolutions: sp.resolution?.values || [],
+                aspectRatios: sp.aspect_ratio?.values || [],
+                maxReferences: sp.input_references?.max || 0,
+                minReferences: sp.input_references?.min || 0, // some models are reference-only
+                supportsImageSize: !!sp.resolution,
+                supportsImageInput: (sp.input_references?.max || 0) > 0
             };
             const opt = document.createElement('div');
             opt.className = 'custom-select-option';
             opt.dataset.value = m.id;
-            opt.textContent = m.name;
+            opt.classList.toggle('no-refs', !MODEL_CONFIGS[m.id].supportsImageInput);
+            opt.append(m.name);
+            MODEL_CONFIGS[m.id].perMillion = formatPrice(price);
+            const span = document.createElement('span');
+            span.className = 'model-price';
+            opt.append(span);
             elements.modelSelectOptions.appendChild(opt);
         }
     } catch (error) {
         console.error('Failed to load models:', error);
         showToast('Failed to load model list from OpenRouter', 'error');
     }
+    refreshPrices();
+    elements.modelSort.value = localStorage.getItem('imagen_model_sort') || 'elo';
+    sortModels();
     // Saved model may have been removed from OpenRouter
     if (!MODEL_CONFIGS[state.selectedModel]) {
         state.selectedModel = Object.keys(MODEL_CONFIGS)[0] || '';
@@ -142,6 +247,7 @@ const elements = {
     modelSelectTrigger: document.getElementById('modelSelectTrigger'),
     modelSelectValue: document.getElementById('modelSelectValue'),
     modelSelectOptions: document.getElementById('modelSelectOptions'),
+    modelSort: document.getElementById('modelSort'),
     geminiOptions: document.getElementById('geminiOptions'),
     apiKey: document.getElementById('apiKey'),
     saveApiKey: document.getElementById('saveApiKey'),
@@ -189,7 +295,7 @@ async function init() {
         if (savedOption) {
             document.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
             savedOption.classList.add('selected');
-            elements.modelSelectValue.textContent = savedOption.textContent;
+            setModelTrigger(savedOption);
         }
     }
 
@@ -234,6 +340,11 @@ async function init() {
 
 // ===== Event Listeners =====
 function setupEventListeners() {
+    elements.modelSort.addEventListener('change', () => {
+        localStorage.setItem('imagen_model_sort', elements.modelSort.value);
+        sortModels();
+    });
+
     // Custom dropdown - toggle
     elements.modelSelectTrigger.addEventListener('click', () => {
         elements.modelSelectContainer.classList.toggle('open');
@@ -244,7 +355,7 @@ function setupEventListeners() {
         option.addEventListener('click', () => {
             state.selectedModel = option.dataset.value;
             localStorage.setItem('imagen_model', state.selectedModel);
-            elements.modelSelectValue.textContent = option.textContent;
+            setModelTrigger(option);
             document.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
             option.classList.add('selected');
             elements.modelSelectContainer.classList.remove('open');
@@ -268,6 +379,7 @@ function setupEventListeners() {
             state.imageQuality = btn.dataset.quality;
             localStorage.setItem('imagen_size', state.imageSize);
             localStorage.setItem('imagen_quality', state.imageQuality);
+            refreshPrices();
         });
     });
 
@@ -550,6 +662,15 @@ async function generateImages() {
     }
 
     const modelConfig = MODEL_CONFIGS[state.selectedModel];
+    const refCount = state.references.filter(Boolean).length;
+    if (refCount < modelConfig.minReferences) {
+        showToast(`${modelConfig.name} requires at least ${modelConfig.minReferences} reference image(s)`, 'error');
+        return;
+    }
+    if (refCount > modelConfig.maxReferences &&
+        !confirm(`${modelConfig.name} accepts ${modelConfig.maxReferences || 'no'} reference image(s), you added ${refCount}. Only the first ${modelConfig.maxReferences} will be sent. Generate anyway?`)) {
+        return;
+    }
     const currentReferences = state.references.length > 0 ? [...state.references] : [];
     const currentModel = state.selectedModel;
     const currentSize = state.imageSize;
@@ -578,7 +699,8 @@ async function generateImages() {
     // Generate images and display each one as it completes
     const generateAndDisplay = async (index) => {
         try {
-            const result = await generateSingleImage(prompt, modelConfig);
+            const usage = {};
+            const result = await generateSingleImage(prompt, modelConfig, usage);
             if (result) {
                 const imageData = {
                     id: Date.now() + index + Math.random(),
@@ -590,10 +712,15 @@ async function generateImages() {
                     quality: currentQuality,
                     aspectRatio: currentAspectRatio,
                     references: currentReferences,
+                    cost: usage.cost,
                     createdAt: new Date().toISOString()
                 };
                 state.images.unshift(imageData);
                 batch.completed++;
+                if (usage.cost) {
+                    localStorage.setItem(costKey(currentModel), usage.cost);
+                    refreshPrices();
+                }
                 
                 // Remove one placeholder and add the new image
                 removeOnePlaceholder(batchId);
@@ -634,57 +761,23 @@ async function generateImages() {
     }
 }
 
-async function generateSingleImage(prompt, modelConfig) {
-    // Build message content
-    const content = [];
+async function generateSingleImage(prompt, modelConfig, usage = {}) {
+    // Dedicated Image API: https://openrouter.ai/docs/guides/overview/multimodal/image-generation
+    const requestBody = { model: state.selectedModel, prompt };
 
-    // Add reference images if supported
-    if (modelConfig.supportsImageInput) {
-        state.references.forEach((ref, index) => {
-            if (ref) {
-                content.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: ref,
-                        detail: 'high'
-                    }
-                });
-            }
-        });
-    }
-
-    // Add text prompt
-    content.push({
-        type: 'text',
-        text: prompt
-    });
-
-    // Build request body
-    const requestBody = {
-        model: state.selectedModel,
-        messages: [
-            {
-                role: 'user',
-                content: content.length === 1 ? prompt : content
-            }
-        ],
-        modalities: modelConfig.modalities
-    };
-
-    // Add Gemini-specific options
-    if (modelConfig.supportsImageSize && state.selectedModel.includes('gemini')) {
-        requestBody.image_config = {
-            image_size: state.imageQuality.toLowerCase(),
-            aspect_ratio: state.aspectRatio
-        };
-    }
-
-    // Add aspect ratio for other models
-    if (modelConfig.supportsAspectRatio && !state.selectedModel.includes('gemini')) {
+    // Only send what the model declares support for, otherwise the API rejects the request
+    if (modelConfig.aspectRatios.includes(state.aspectRatio)) {
         requestBody.aspect_ratio = state.aspectRatio;
     }
+    if (modelConfig.resolutions.includes(state.imageQuality)) {
+        requestBody.resolution = state.imageQuality;
+    }
+    const refs = state.references.filter(Boolean).slice(0, modelConfig.maxReferences);
+    if (refs.length > 0) {
+        requestBody.input_references = refs.map(url => ({ type: 'image_url', image_url: { url } }));
+    }
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch('https://openrouter.ai/api/v1/images', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${state.apiKey}`,
@@ -701,65 +794,14 @@ async function generateSingleImage(prompt, modelConfig) {
     }
 
     const data = await response.json();
+    usage.cost = data.usage?.cost;
 
-    // Extract image from response
-    // OpenRouter returns images in different formats depending on the model
-    const message = data.choices?.[0]?.message;
-
-    if (!message) {
-        throw new Error('No response from model');
+    const img = data.data?.[0];
+    if (!img?.b64_json) {
+        console.log('API Response:', JSON.stringify(data, null, 2));
+        throw new Error('No image in response. Check console for full API response.');
     }
-
-    // Log full response for debugging
-    console.log('API Response:', JSON.stringify(data, null, 2));
-
-    // Check for images array in message (OpenRouter SDK format)
-    // According to OpenRouter docs: message.images[].image_url.url
-    if (message.images && message.images.length > 0) {
-        const img = message.images[0];
-        // OpenRouter SDK format: { image_url: { url: "data:image/..." } }
-        if (img.image_url?.url) {
-            return img.image_url.url;
-        }
-        // Alternative formats
-        if (typeof img === 'string') {
-            if (img.startsWith('data:') || img.startsWith('http')) {
-                return img;
-            }
-            return `data:image/png;base64,${img}`;
-        }
-        if (img.url) return img.url;
-        if (img.b64_json) return `data:image/png;base64,${img.b64_json}`;
-    }
-
-    // Check for image in content parts (different models may use this format)
-    if (Array.isArray(message.content)) {
-        for (const part of message.content) {
-            // OpenAI-style image_url part
-            if (part.type === 'image_url' && part.image_url?.url) {
-                return part.image_url.url;
-            }
-            // Gemini-style inlineData part
-            if (part.inlineData?.data) {
-                const mimeType = part.inlineData.mimeType || 'image/png';
-                return `data:${mimeType};base64,${part.inlineData.data}`;
-            }
-            // Generic image part
-            if (part.type === 'image' && part.image) {
-                if (part.image.startsWith('data:')) {
-                    return part.image;
-                }
-                return `data:image/png;base64,${part.image}`;
-            }
-        }
-    }
-
-    // Check if content itself is the image data (some models return this way)
-    if (typeof message.content === 'string' && message.content.startsWith('data:image')) {
-        return message.content;
-    }
-
-    throw new Error('No image in response. Check console for full API response.');
+    return `data:${img.media_type || 'image/png'};base64,${img.b64_json}`;
 }
 
 // ===== Gallery =====
@@ -862,6 +904,7 @@ function renderGallery() {
                     <span class="meta-tag">${escapeHtml(image.modelName || image.model)}</span>
                     <span class="meta-tag">${escapeHtml(image.quality || image.size)}</span>
                     <span class="meta-tag">${escapeHtml(image.aspectRatio)}</span>
+                    ${image.cost ? `<span class="meta-tag">$${image.cost.toFixed(3)}</span>` : ''}
                 </div>
             </div>
         `;
@@ -1023,6 +1066,7 @@ function createImageCardElement(image, index) {
                 <span class="meta-tag">${escapeHtml(image.modelName || image.model)}</span>
                 <span class="meta-tag">${escapeHtml(image.quality || image.size)}</span>
                 <span class="meta-tag">${escapeHtml(image.aspectRatio)}</span>
+                ${image.cost ? `<span class="meta-tag">$${image.cost.toFixed(3)}</span>` : ''}
             </div>
         </div>
     `;
@@ -1136,7 +1180,7 @@ function recreateImageByIndex(index) {
     if (modelOption) {
         document.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
         modelOption.classList.add('selected');
-        elements.modelSelectValue.textContent = modelOption.textContent;
+        setModelTrigger(modelOption);
     }
     updateGeminiOptionsVisibility();
 
@@ -1179,6 +1223,7 @@ function openModal(image) {
         <p><strong>Model:</strong> ${escapeHtml(image.modelName || image.model)}</p>
         <p><strong>Size/Quality:</strong> ${escapeHtml(image.quality || image.size)}</p>
         <p><strong>Aspect Ratio:</strong> ${escapeHtml(image.aspectRatio)}</p>
+        ${image.cost ? `<p><strong>Cost:</strong> $${image.cost.toFixed(4)}</p>` : ''}
         <p><strong>Created:</strong> ${escapeHtml(new Date(image.createdAt).toLocaleString())}</p>
         ${image.references?.length > 0 ? `<p><strong>References Used:</strong> ${escapeHtml(image.references.length)}</p>` : ''}
     `;
@@ -1213,7 +1258,7 @@ function recreateImage() {
     if (modelOption) {
         document.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
         modelOption.classList.add('selected');
-        elements.modelSelectValue.textContent = modelOption.textContent;
+        setModelTrigger(modelOption);
     }
     updateGeminiOptionsVisibility();
 
@@ -1265,9 +1310,17 @@ function downloadCurrentImage() {
 }
 
 // ===== UI Helpers =====
+// Shows the size block only for models with a resolution option and disables values the model doesn't accept
 function updateGeminiOptionsVisibility() {
-    const isGemini = state.selectedModel.includes('gemini');
-    elements.geminiOptions.style.display = isGemini ? 'flex' : 'none';
+    const config = MODEL_CONFIGS[state.selectedModel];
+    if (!config) return;
+    elements.geminiOptions.style.display = config.supportsImageSize ? 'flex' : 'none';
+    document.querySelectorAll('.btn-toggle').forEach(btn => {
+        btn.disabled = config.supportsImageSize && !config.resolutions.includes(btn.dataset.quality);
+    });
+    document.querySelectorAll('.btn-aspect').forEach(btn => {
+        btn.disabled = !config.aspectRatios.includes(btn.dataset.ratio);
+    });
 }
 
 function showToast(message, type = 'info') {
