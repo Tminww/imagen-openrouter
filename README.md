@@ -8,15 +8,9 @@ A powerful client-side AI image generation tool using OpenRouter API. Generate t
 ## ✨ Features
 
 ### 🎨 Multi-Model Support
-- **Gemini 2.5 Flash Image** - Google's fast image generation
-- **Gemini 2.5 Flash (Preview)** - Preview version with latest features
-- **Gemini 3.1 Flash (Preview)** - Newer Gemini preview image model
-- **Gemini 3 Pro (Preview)** - Advanced model, up to 14 reference images
-- **GPT-5 Image** - OpenAI's latest image model
-- **GPT-5 Image Mini** - Faster, smaller GPT-5 variant
-- **Flux 2 Pro / Max / Flex / Klein** - Black Forest Labs models
-- **Seedream 4.5** - ByteDance's image model
-- **Riverflow V2** - Fast/Standard/Max variants
+The model list is loaded dynamically from OpenRouter (`/api/v1/models?output_modalities=image`),
+so newly added image models (Gemini, GPT Image, Flux, Seedream, Recraft, Riverflow, Qwen, Grok, etc.)
+appear automatically without code changes.
 
 ### 📐 Flexible Output Options
 - **Resolution**: 1K, 2K, 4K (Gemini models)
